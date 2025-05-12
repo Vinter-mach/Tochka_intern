@@ -2,6 +2,7 @@ import sys
 import collections
 from heapq import heappush, heappop
 
+
 # Константы для символов ключей и дверей
 keys_char = [chr(i) for i in range(ord('a'), ord('z') + 1)]
 doors_char = [k.upper() for k in keys_char]
@@ -18,7 +19,48 @@ def check_cell(r, c, n, m):
     return 0 <= r and r < n and 0 <= c and c < m
 
 
-def relax_state(r, c, cur_dist, cur_mask, v1, v2, v3, v4, v_idx, data, pq, dist):
+# A-Star estimation (not finished)
+def calc_estimator(v1, v2, v3, v4, vertices, n, m, data):
+    return 0
+
+    used = [[0] * m for _ in range(n)]
+    bfs_dist = [[0] * m for _ in range(n)]
+    q = collections.deque()
+
+    for i, v in enumerate([v1, v2, v3, v4], 1):
+        _, r, c = vertices[v]
+        used[r][c] = i
+        bfs_dist[r][c] = 0
+        q.append((r, c))
+
+    max_steps = [0] * (num_robots + 1)
+    while len(q) > 0:
+        r, c = q.popleft()
+        max_steps[used[r][c]] = max(max_steps[used[r][c]], bfs_dist[r][c])
+
+        for dr, dc in deltas:
+            nr, nc = r + dr, c + dc
+            if not check_cell(nr, nc, n, m) or used[nr][nc] != 0:
+                continue
+
+            if data[nr][nc] == '#':
+                continue
+
+            if nr == vertices[v2][1] and nc == vertices[v2][2]:
+                continue
+            if nr == vertices[v3][1] and nc == vertices[v3][2]:
+                continue
+            if nr == vertices[v4][1] and nc == vertices[v4][2]:
+                continue
+
+            used[nr][nc] = used[r][c]
+            bfs_dist[nr][nc] = bfs_dist[r][c] + 1
+            q.append((nr, nc))
+
+    return sum(max_steps)
+
+
+def relax_state(r, c, cur_dist, cur_mask, v1, v2, v3, v4, vertices, v_idx, n, m, data, pq, dist):
     if v_idx[r][c] < 0:
         return
 
@@ -28,7 +70,9 @@ def relax_state(r, c, cur_dist, cur_mask, v1, v2, v3, v4, v_idx, data, pq, dist)
 
     if (new_mask, nv1, nv2, nv3, nv4) not in dist or dist[(new_mask, nv1, nv2, nv3, nv4)] > cur_dist:
         dist[(new_mask, nv1, nv2, nv3, nv4)] = cur_dist
-        heappush(pq, (cur_dist, new_mask, nv1, nv2, nv3, nv4))
+
+        estimator = calc_estimator(nv1, nv2, nv3, nv4, vertices, n, m, data)
+        heappush(pq, (cur_dist + estimator, cur_dist, new_mask, nv1, nv2, nv3, nv4))
 
 
 def walk(cur_mask, v1, v2, v3, v4, vertices, v_idx, cnt_keys, cur_dist, n, m, data, pq, dist):
@@ -48,7 +92,7 @@ def walk(cur_mask, v1, v2, v3, v4, vertices, v_idx, cnt_keys, cur_dist, n, m, da
 
     while len(q) > 0:
         r, c = q.popleft()
-        relax_state(r, c, cur_dist + bfs_dist[r][c], cur_mask, v1, v2, v3, v4, v_idx, data, pq, dist)
+        relax_state(r, c, cur_dist + bfs_dist[r][c], cur_mask, v1, v2, v3, v4, vertices, v_idx, n, m, data, pq, dist)
 
         for dr, dc in deltas:
             nr, nc = r + dr, c + dc
@@ -84,10 +128,11 @@ def solve(data):
             elif ch in keys_char:
                 vertices.insert(0, (ch, i, j))
 
-    assert (len(vertices) >= num_robots and all(map(lambda v: v[0] == '@', vertices[-num_robots:])))
+    assert(len(vertices) >= num_robots and all(map(lambda v: v[0] == '@', vertices[-num_robots:])))
 
     cnt_keys = len(vertices) - num_robots
-    all_keys_mask = 2 ** cnt_keys - 1
+    all_keys_mask = 2**cnt_keys - 1
+
 
     v_idx = [[-num_robots - 1] * m for _ in range(n)]
     for i, (ch, r, c) in enumerate(vertices):
@@ -98,12 +143,10 @@ def solve(data):
     used = set()
     # state: (mask, v1, v2, v3, v4)
     dist[(0, -4, -3, -2, -1)] = 0
-    heappush(pq, (dist[(0, -4, -3, -2, -1)], 0, -4, -3, -2, -1))
+    heappush(pq, (calc_estimator(-4, -3, -2, -1, vertices, n, m, data), 0, 0, -4, -3, -2, -1))
 
     while len(pq) > 0:
-        cur_dist, cur_mask, v1, v2, v3, v4 = heappop(pq)
-        # print(cur_dist, bin(cur_mask)[2:].rjust(cnt_keys, '0'), v1, v2, v3, v4)
-        assert (len(set([v1, v2, v3, v4])) == 4)
+        _, cur_dist, cur_mask, v1, v2, v3, v4 = heappop(pq)
         if (cur_mask, v1, v2, v3, v4) in used:
             continue
 
